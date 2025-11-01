@@ -6,6 +6,7 @@ Provides REST API for managing group chat sessions and travel planning.
 import uuid
 from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .models import (
@@ -460,3 +461,25 @@ async def approve_plan(
             detail=f"Failed to approve plan: {str(e)}"
         )
 
+
+class UserAnswer(BaseModel):
+    user_id: str
+    accepted: bool
+
+@router.post("/{session_id}/monitor")
+async def monitor_answers(
+    session_id: str,
+    request: UserAnswer,
+    db: Session = Depends(get_db),
+):
+    if not request.accepted:
+        return {
+            "status": "rejected",
+            "reason": "user_rejected"
+        }
+
+    return {
+        "status": "accepted",
+        "reason": "user_accepted"
+    }
+    

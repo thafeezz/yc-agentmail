@@ -13,6 +13,9 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
 
+from tools import agentmail_create_inbox, agentmail_send_message, agentmail_read_inbox, hyperspell
+
+
 # Import both LLM providers
 try:
     from langchain_anthropic import ChatAnthropic
@@ -80,16 +83,19 @@ class GroupChatOrchestrator:
         self.messages_per_volley = messages_per_volley
         self.llm_model = llm_model
         
+        self.tools = [agentmail_create_inbox, agentmail_send_message, agentmail_read_inbox, hyperspell]
+
         # Determine which LLM provider to use
         llm_provider = get_llm_provider()
         
         # Initialize LLM
-        if llm_provider == "anthropic":
-            self.llm = ChatAnthropic(
+        if llm_provider == "anthropic":            
+            model = ChatAnthropic(
                 model=llm_model,
                 api_key=os.getenv("ANTHROPIC_API_KEY"),
                 temperature=0.7
             )
+
             print(f"🤖 Using Anthropic Claude")
         else:
             self.llm = ChatOpenAI(
