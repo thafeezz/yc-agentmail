@@ -20,8 +20,8 @@ from typing import Tuple
 
 # Group Chat imports for plan-driven booking
 try:
-    from .group_chat_agent.models import TravelPlan
-    from .group_chat_agent.database import (
+    from .group_chat.models import TravelPlan
+    from .group_chat.database import (
         get_session as gc_get_session,
         get_chat_session as gc_get_chat_session,
     )
@@ -246,32 +246,34 @@ class PlanBookingRequest(BaseModel):
 # Helpers: mapping TravelPlan → BookingRequest
 # ==========================
 
-def _derive_flight_criteria_from_plan(plan: TravelPlan) -> Optional[FlightSearchCriteria]:
+def _derive_flight_criteria_from_plan(plan: Dict[str, Any]) -> Optional[FlightSearchCriteria]:
     try:
-        prefs = (plan.flight.preferences or "").lower()
+        flight = plan.get("flight", {})
+        prefs = (flight.get("preferences") or "").lower()
         max_stops = "any"
         if "nonstop" in prefs or "non-stop" in prefs:
             max_stops = "nonstop"
         elif "1 stop" in prefs or "one stop" in prefs:
             max_stops = "1stop"
         return FlightSearchCriteria(
-            max_price=plan.flight.max_budget_per_person,
+            max_price=flight.get("max_budget_per_person"),
             preferred_airlines=None,
             max_stops=max_stops,
-            departure_time=plan.flight.preferred_departure_time,
+            departure_time=flight.get("preferred_departure_time"),
             refundable_only=False,
         )
     except Exception:
         return None
 
 
-def _derive_hotel_criteria_from_plan(plan: TravelPlan) -> Optional[HotelSearchCriteria]:
+def _derive_hotel_criteria_from_plan(plan: Dict[str, Any]) -> Optional[HotelSearchCriteria]:
     try:
+        hotel = plan.get("hotel", {})
         return HotelSearchCriteria(
-            max_price=plan.hotel.max_budget_per_night,
-            min_stars=plan.hotel.star_rating_min,
+            max_price=hotel.get("max_budget_per_night"),
+            min_stars=hotel.get("star_rating_min"),
             min_guest_rating=None,
-            required_amenities=plan.hotel.amenities or [],
+            required_amenities=hotel.get("amenities") or [],
             free_cancellation=False,
             property_types=None,
         )
@@ -279,18 +281,52 @@ def _derive_hotel_criteria_from_plan(plan: TravelPlan) -> Optional[HotelSearchCr
         return None
 
 
-def build_booking_request_from_plan(plan: TravelPlan, payload: PlanBookingRequest) -> "BookingRequest":
-    passengers = payload.passengers if payload.passengers is not None else (len(plan.participants) if getattr(plan, "participants", None) else 1)
-    hotel_location = plan.hotel.location if getattr(plan, "hotel", None) and plan.hotel.location else plan.location
-    flight_pref = plan.flight.preferences if getattr(plan, "flight", None) and plan.flight.preferences else "cheapest"
-    hotel_budget = plan.hotel.max_budget_per_night if getattr(plan, "hotel", None) else None
+def build_booking_request_from_plan(plan: Dict[str, Any], payload: PlanBookingRequest) -> "BookingRequest":
+    # Handle both Dict and Pydantic TravelPlan objects
+    if isinstance(plan, dict):
+        participants = plan.get("participants", [])
+        hotel = plan.get("hotel", {})
+        flight = plan.get("flight", {})
+        dates = plan.get("dates", {})
+        location = plan.get("location")
+    else:
+        # It's a Pydantic model
+        participants = getattr(plan, "participants", [])
+        hotel = plan.hotel if hasattr(plan, "hotel") else {}
+        flight = plan.flight if hasattr(plan, "flight") else {}
+        dates = plan.dates if hasattr(plan, "dates") else {}
+        location = getattr(plan, "location", None)
+    
+    passengers = payload.passengers if payload.passengers is not None else (len(participants) if participants else 1)
+    
+    # Get values depending on type
+    if isinstance(plan, dict):
+        hotel_location = hotel.get("location") if hotel.get("location") else location
+        flight_pref = flight.get("preferences") if flight.get("preferences") else "cheapest"
+        hotel_budget = hotel.get("max_budget_per_night")
+        flight_origin = flight.get("origin")
+        flight_destination = flight.get("destination")
+        departure_date = dates.get("departure_date")
+        return_date = dates.get("return_date")
+    else:
+        # Pydantic objects
+        hotel_location = hotel.location if hasattr(hotel, "location") and hotel.location else location
+        flight_pref = flight.preferences if hasattr(flight, "preferences") and flight.preferences else "cheapest"
+        hotel_budget = hotel.max_budget_per_night if hasattr(hotel, "max_budget_per_night") else None
+        flight_origin = flight.origin if hasattr(flight, "origin") else None
+        flight_destination = flight.destination if hasattr(flight, "destination") else None
+        departure_date = dates.departure_date if hasattr(dates, "departure_date") else None
+        return_date = dates.return_date if hasattr(dates, "return_date") else None
+    
     hotel_pref = (
         f"highest rated under ${hotel_budget}" if hotel_budget else "highest rated under $200"
     )
 
     # Prefer explicit criteria from payload; otherwise derive from plan
-    flight_crit = payload.flight_criteria or _derive_flight_criteria_from_plan(plan)
-    hotel_crit = payload.hotel_criteria or _derive_hotel_criteria_from_plan(plan)
+    # Convert to dict for the derive functions
+    plan_dict = plan if isinstance(plan, dict) else plan.dict()
+    flight_crit = payload.flight_criteria or _derive_flight_criteria_from_plan(plan_dict)
+    hotel_crit = payload.hotel_criteria or _derive_hotel_criteria_from_plan(plan_dict)
 
     return BookingRequest(
         # Auth
@@ -298,14 +334,14 @@ def build_booking_request_from_plan(plan: TravelPlan, payload: PlanBookingReques
         password=payload.credentials.password,
         create_account=payload.create_account,
         # Flight
-        origin=plan.flight.origin,
-        destination=plan.flight.destination,
-        departure_date=plan.dates.departure_date,
-        return_date=plan.dates.return_date,
+        origin=flight_origin,
+        destination=flight_destination,
+        departure_date=departure_date,
+        return_date=return_date,
         # Hotel
         hotel_location=hotel_location,
-        check_in=plan.dates.departure_date,
-        check_out=plan.dates.return_date,
+        check_in=departure_date,
+        check_out=return_date,
         # Traveler
         first_name=payload.traveler.first_name,
         last_name=payload.traveler.last_name,
