@@ -4,30 +4,29 @@ from agentmail import AgentMail
 from cfg import settings
 from pydantic import BaseModel
 from typing import Any
+from clients import hyperspell_client, agentmail_client
+from cfg import USER_TO_RESOURCE
+from agent import PersonaAgent
 
 app = FastAPI()
 
-agentmail_client = AgentMail(api_key=settings.agentmail_api_key)
-
 # todo: rename me
-class SomeSchema(BaseModel):
-    ctx: dict[str, Any]
+class Context(BaseModel):
+    transcript: dict[str, Any]
+    user_id: str
 
 
-@app.post()
-
-
+# invoked after onboarding completed with context of conversation
 @app.post("/webhooks/store-ctx")
-async def store_ctx(request: Request):
+async def store_ctx(ctx: Context):
     # store ctx in hyperspell
-    pass
+    response = hyperspell_client.memories.add(text=ctx.transcript, collection=ctx.user_id)
+    USER_TO_RESOURCE[ctx.user_id] = response.resource_id
 
-
-# need to expose tools for stripe payment and agentmail
-@app.post("/api/payment")
-async def payment(request: Request):
-    pass
-
+    # create an agent for this persona/user
+    persona_agent = PersonaAgent(user_id=ctx.user_id)
+    # invoked some kind of run loop or callback for the agent
+    persona_agent.invoke()
 
 
 @app.post("webhooks/create-email")
