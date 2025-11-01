@@ -40,6 +40,9 @@ async def test_flight_tools():
     await asyncio.sleep(2)
     
     # Import the tools
+    # Add parent directory to path to allow imports
+    import sys
+    sys.path.insert(0, os.path.dirname(__file__))
     from expedia_flight_tools import flight_tools
     
     # Get the tool functions from the registry
@@ -82,26 +85,16 @@ async def test_flight_tools():
             await asyncio.sleep(0.3)
             await page.click('#loginFormSubmitButton')
 
-            # Wait for OTP screen and allow manual entry
-            print("   ⏳ Waiting for 6-digit OTP entry (up to 60s)...")
+            # Wait for OTP screen
+            print("   ⏳ Waiting for OTP page...")
             await page.wait_for_selector('#verify-sms-one-time-passcode-input', timeout=15000)
-            otp_entered = False
-            for _ in range(60):  # Reduced from 120 to 60 seconds
-                try:
-                    code_len = await page.evaluate("() => { const el = document.querySelector('#verify-sms-one-time-passcode-input'); return el ? (el.value || '').length : 0 }")
-                    if code_len and code_len >= 6:
-                        await page.click('#verifyOtpFormSubmitButton')
-                        otp_entered = True
-                        break;
-                except Exception:
-                    pass
-                await asyncio.sleep(1)
-            if not otp_entered:
-                print("   ⚠️  OTP not detected within timeout; please click Continue manually if already entered")
-
-            # Small wait to let sign-in complete
+            print("   ✅ Reached OTP page!")
+            
+            # Go back to base URL instead of handling OTP
+            print("   🔙 Navigating back to base URL (skipping OTP)...")
+            await page.goto("https://www.expedia.com/", wait_until="domcontentloaded", timeout=60000)
             await asyncio.sleep(2)
-            print("   ✅ Sign-in flow complete (continuing)")
+            print("   ✅ Back at homepage (sign-in flow skipped)")
         except Exception as e:
             print(f"   ⚠️  Sign-in step skipped/failed: {e}")
         

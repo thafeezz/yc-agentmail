@@ -25,7 +25,8 @@ from browser_use.llm import ChatOpenAI as BrowserUseChatOpenAI, ChatGroq as Brow
 
 # Import our custom tools for Browser Use agent
 try:
-    from expedia_agent_tools import expedia_tools
+    # Import combined Expedia tools (flight, hotel, and general actions)
+    from .expedia_agent_tools import expedia_tools
     TOOLS_AVAILABLE = True
     print("✅ Custom Expedia tools loaded")
 except ImportError as e:
@@ -82,7 +83,8 @@ class ExpediaAgent:
         cloud_profile_id: Optional[str] = None,
         use_cloud_browser: bool = False,  # Default to local for debugging
         headless: bool = False,
-        use_tools: bool = True
+        use_tools: bool = True,
+        tool_type: str = "all"  # "all", "flight", or "hotel"
     ):
         """
         Initialize the Expedia agent with local browser and custom tools.
@@ -97,14 +99,17 @@ class ExpediaAgent:
             use_cloud_browser: If True, browser runs in cloud. If False, runs locally
             headless: Run browser in headless mode (only for local browser)
             use_tools: Enable custom Expedia tools
+            tool_type: Which tools to load - "all", "flight", or "hotel"
         """
         self.llm_model = llm_model
         self.cloud_profile_id = cloud_profile_id
         self.use_cloud_browser = use_cloud_browser
         self.headless = headless
         self.use_tools = use_tools
+        self.tool_type = tool_type
         self.browser = None
         self.agent = None
+        self.session_id = None  # Browser session ID for tracking
         
         # Initialize LLM based on model choice
         self.llm = self._create_llm(llm_model)
@@ -124,17 +129,48 @@ class ExpediaAgent:
             print(f"🖥️  Browser mode: LOCAL (headless={headless})")
             print("👁️  Browser will be VISIBLE for debugging" if not headless else "👻 Browser will be HIDDEN")
         
-        # Browser Use custom tools
-        self.tools = expedia_tools if (TOOLS_AVAILABLE and use_tools) else None
+        # Load tools based on tool_type
+        self.tools = self._load_tools(tool_type) if (TOOLS_AVAILABLE and use_tools) else None
         if self.tools:
-            print("🔧 Custom Expedia tools loaded:")
-            print("   - Navigation tools (4)")
-            print("   - Search tools (2)")
-            print("   - Filter tools (2)")
-            print("   - Login tools (1)")
-            print("   - Utility tools (2)")
+            tool_count = len(self.tools.registry.actions)
+            print(f"🔧 Custom Expedia tools loaded ({tool_type.upper()}):")
+            print(f"   - {tool_count} total tools")
         else:
             print("⚠️  No custom tools loaded (use_tools=False or tools not available)")
+    
+    def _load_tools(self, tool_type: str):
+        """Load tools based on tool_type filter."""
+        from browser_use.controller.registry.service import Registry
+        from .expedia_flight_tools import flight_tools
+        from .expedia_hotel_prebuilt_actions import expedia_hotel_prebuilt
+        from .expedia_prebuilt_actions import expedia_prebuilt
+        
+        if tool_type == "all":
+            # Load all tools (existing behavior)
+            return expedia_tools
+        
+        # Create filtered registry
+        filtered_registry = Registry()
+        
+        if tool_type == "flight":
+            # Only load flight tools (no sign-in)
+            for action_name, registered_action in flight_tools.registry.actions.items():
+                filtered_registry.registry.actions[action_name] = registered_action
+            for action_name, registered_action in expedia_prebuilt.registry.actions.items():
+                # Include general navigation tools only (sign-in disabled)
+                if any(keyword in action_name.lower() for keyword in ['navigate']):
+                    filtered_registry.registry.actions[action_name] = registered_action
+        
+        elif tool_type == "hotel":
+            # Only load hotel tools (no sign-in)
+            for action_name, registered_action in expedia_hotel_prebuilt.registry.actions.items():
+                filtered_registry.registry.actions[action_name] = registered_action
+            for action_name, registered_action in expedia_prebuilt.registry.actions.items():
+                # Include general navigation tools only (sign-in disabled)
+                if any(keyword in action_name.lower() for keyword in ['navigate']):
+                    filtered_registry.registry.actions[action_name] = registered_action
+        
+        return filtered_registry
     
     def _create_llm(self, model_name: str):
         """Create LLM instance (OpenAI or Groq) using browser-use wrapper."""
@@ -238,16 +274,20 @@ class ExpediaAgent:
         """
         await self.create_browser()
         
+        # Create agent
         self.agent = Agent(
             task=task,
             llm=self.llm,
-            browser=self.browser,
-            tools=self.tools if self.use_tools else None
+            browser=self.browser
         )
         
-        print(f"🤖 Agent created")
-        if self.tools:
-            print(f"   ✅ Custom Expedia tools enabled")
+        # Register custom tools by replacing the controller's registry
+        if self.use_tools and self.tools:
+            self.agent.controller.registry = self.tools
+            print(f"🤖 Agent created")
+            print(f"   ✅ Custom Expedia tools enabled ({len(self.tools.registry.actions)} tools)")
+        else:
+            print(f"🤖 Agent created (no custom tools)")
         
         return self.agent
     

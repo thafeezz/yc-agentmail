@@ -1,0 +1,109 @@
+
+================================================================================
+API ROUTE TEST: EXPEDIA BOOKING WITH BROWSER AUTOMATION
+================================================================================
+
+This test will:
+1. Create test users with Expedia credentials
+2. Create an approved travel plan in the database
+3. Call the API route that triggers parallel bookings
+4. Verify that browser automation actually runs
+
+⚠️  Requirements:
+   - BROWSER_USE_API_KEY in .env
+   - OPENAI_API_KEY in .env
+   - AGENTMAIL_API_KEY in .env
+   - Test credentials: testuser@agentmail.to / TestPass123!
+
+⏱️  Expected duration: 5-15 minutes if browser automation works
+================================================================================
+
+🚀 Starting test automatically in 3 seconds...
+   (Press Ctrl+C to cancel)
+
+================================================================================
+TEST: API Route for Expedia Booking with Browser Automation
+================================================================================
+INFO     [browser_use.telemetry.service] Anonymized telemetry enabled. See https://docs.browser-use.com/development/telemetry for more information.
+✅ Combined 31 Expedia tools from all registries
+✅ Custom Expedia tools loaded
+✅ Group Chat Agent endpoints loaded
+
+📦 Setting up test database...
+   ✅ Cleaned up existing test data
+
+👥 Creating test users with booking credentials...
+   ✅ Created test users: api_test_alice, api_test_bob
+
+✈️  Creating approved travel plan...
+   ✅ Created approved session: api_test_20251101_123449
+      Location: Cancun, Mexico
+      Dates: 2025-12-31 → 2026-01-07
+      Users: api_test_alice, api_test_bob
+
+🚀 Testing API route: POST /trigger-bookings/{session_id}
+   ⚠️  This will trigger REAL browser automation via ExpediaAgent
+   ⚠️  Expected duration: 5-15 minutes for parallel bookings
+   ⚠️  Watch at: https://cloud.browser-use.com/dashboard
+
+⏳ Calling trigger_parallel_bookings()...
+   This should initialize ExpediaAgent and start browser automation...
+🚀 Starting parallel bookings for 2 users...
+
+🔍 Booking for user api_test_alice (alice@agentmail.to)...
+   Has expedia_credentials: True
+   Has payment_details: True
+   Has contact_info: True
+✅ api_test_alice: All credentials present, initializing ExpediaAgent...
+🤖 Using AI model: gpt-4o (OpenAI)
+☁️  Browser mode: CLOUD (handles CAPTCHAs, saved logins)
+ℹ️  No profile ID - will use fresh cloud browser
+   To save auth: https://cloud.browser-use.com/dashboard/settings?tab=profiles
+🔧 Custom Expedia tools loaded:
+   - Navigation tools (4)
+   - Search tools (2)
+   - Filter tools (2)
+   - Login tools (1)
+   - Utility tools (2)
+🤖 api_test_alice: Agent initialized, starting booking task...
+
+======================================================================
+🎯 TASK: 
+Complete an Expedia flight and hotel booking:
+
+1. Navigate to Expedia homepage
+2. Login with email:...
+======================================================================
+
+☁️  Cloud browser initialized
+INFO     [browser_use.agent.service] 💾 File system path: /var/folders/vt/qy6st08s5r78t707j1t3pz140000gn/T/browser_use_agent_0690660d-9755-7a8d-8000-5121df279e47
+INFO     [browser_use.Agent🅰 9e47 on 🆂 9e47 🅟 72] 🧠 Starting a browser-use agent 0.5.7 with base_model=gpt-4o +vision extraction_model=gpt-4o +file_system
+🤖 Agent created
+   ✅ Custom Expedia tools enabled
+INFO     [browser_use.Agent🅰 9e47 on 🆂 9f4c 🅟 72] 🚀 Starting task: 
+Complete an Expedia flight and hotel booking:
+
+1. Navigate to Expedia homepage
+2. Login with email: testuser@agentmail.to
+3. Search for flights:
+   - From: LAX
+   - To: CUN
+   - Departure: 2025-12-31
+   - Return: 2026-01-07
+4. Select a flight (cheapest available matching preferences: Direct flight, economy class)
+5. Search for hotels in Cancun Hotel Zone
+   - Check-in: 2025-12-31
+   - Check-out: 2026-01-07
+6. Select a hotel (best rated under budget, preferences: ['beach access', 'pool', 'wifi'])
+7. Fill traveler information:
+   - Name: Alice Test
+   - Email: testuser@agentmail.to
+   - Phone: +1-555-111-2222
+8. Fill payment information:
+   - Card: Alice Test
+   - Billing: {'street': '123 Test St', 'city': 'Los Angeles', 'state': 'CA', 'zip': '90001', 'country': 'USA'}
+9. Complete the booking
+
+Use the custom Expedia tools to efficiently complete each step.
+Take screenshots at key verification points.
+

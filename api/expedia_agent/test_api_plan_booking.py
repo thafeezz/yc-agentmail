@@ -16,14 +16,14 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_group_chat_agent.db"
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from api.group_chat_agent.database import (
+from api.group_chat.database import (
     init_db,
     get_session,
     create_user,
     create_session as gc_create_session,
     update_chat_session,
 )
-from api.group_chat_agent.models import (
+from api.group_chat.models import (
     UserPreferences,
     TravelPlan,
     TravelDates,

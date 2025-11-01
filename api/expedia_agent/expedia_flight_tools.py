@@ -26,59 +26,139 @@ async def sign_in_expedia(
     email: str
 ) -> str:
     """
-    Sign in to Expedia account - requires manual OTP entry.
-    Opens sign-in flow and waits for user to enter OTP code.
+    Sign in to Expedia account - automatically fetches OTP from AgentMail inbox.
+    Opens sign-in flow, waits 10 seconds, then retrieves emails with OTP code.
     
     Args:
-        email: Expedia account email (e.g., "lobbygpe@proton.me")
+        email: Expedia account email (AgentMail inbox address, used for API calls)
     """
     try:
         page = await browser_session.get_current_page()
         
         # Go to homepage for sign in
+        logger.info("🌐 Navigating to Expedia homepage...")
         await page.goto("https://www.expedia.com/", wait_until="domcontentloaded", timeout=60000)
-        await asyncio.sleep(1)
+        await asyncio.sleep(2)
         
-        # Open header Sign in menu
-        await page.click("button[data-testid='header-menu-button']:has-text('Sign in')", timeout=10000)
+        # Open header Sign in menu (with longer timeout for CAPTCHA pages)
+        logger.info("👆 Clicking Sign in button...")
+        try:
+            await page.click("button[data-testid='header-menu-button']:has-text('Sign in')", timeout=20000)
+        except Exception as e:
+            # Might be on CAPTCHA page, try waiting longer
+            logger.warning(f"Sign in button not found, waiting 5s: {e}")
+            await asyncio.sleep(5)
+            await page.click("button[data-testid='header-menu-button']:has-text('Sign in')", timeout=20000)
+        
         await asyncio.sleep(0.5)
         
         # Click Sign in in the dropdown
+        logger.info("📝 Opening sign-in form...")
         await page.click("a[href^='/login'] >> text=Sign in", timeout=10000)
         await asyncio.sleep(1)
         
         # Fill email and continue
+        logger.info(f"📧 Entering email: {email}")
         await page.wait_for_selector('#loginFormEmailInput', timeout=15000)
         await page.fill('#loginFormEmailInput', email)
         await asyncio.sleep(0.3)
         await page.click('#loginFormSubmitButton')
+        await asyncio.sleep(1)
         
         # Wait for OTP screen
-        logger.info("⏳ Waiting for 6-digit OTP entry (up to 60s)...")
-        await page.wait_for_selector('#verify-sms-one-time-passcode-input', timeout=15000)
+        logger.info("⏳ Waiting for OTP entry page...")
+        await page.wait_for_selector('#verify-sms-one-time-passcode-input', timeout=30000)
+        logger.info("✅ OTP page loaded successfully!")
         
-        # Wait for OTP to be entered
-        otp_entered = False
-        for _ in range(60):
-            try:
-                code_len = await page.evaluate("""() => {
-                    const el = document.querySelector('#verify-sms-one-time-passcode-input');
-                    return el ? (el.value || '').length : 0;
-                }""")
-                if code_len and code_len >= 6:
-                    await page.click('#verifyOtpFormSubmitButton')
-                    otp_entered = True
-                    break
-            except Exception:
-                pass
-            await asyncio.sleep(1)
+        # Wait 10 seconds for email to arrive
+        logger.info("📬 Waiting 10 seconds for email delivery...")
+        await asyncio.sleep(10)
         
-        if not otp_entered:
-            logger.warning("⚠️ OTP not detected within timeout")
-            return "OTP timeout - please click Continue manually if already entered"
-        
-        await asyncio.sleep(2)
-        return "✅ Sign-in complete"
+        # Automatically fetch inbox messages with OTP and enter it
+        logger.info("📬 Fetching inbox messages...")
+        try:
+            # Import here to avoid circular dependencies
+            import sys
+            import os
+            import re
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+            from api.agentmail_helper import get_inbox_messages
+            
+            # Use email address as inbox_id (AgentMail API uses email format)
+            messages = get_inbox_messages(email, limit=20)
+            
+            otp_code = None
+            if messages:
+                logger.info(f"✅ Retrieved {len(messages)} messages, searching for OTP...")
+                # Search for 6-digit OTP code in message SUBJECTS and bodies
+                for msg in messages:
+                    body = msg.get('body', '')
+                    subject = msg.get('subject', '')
+                    
+                    # Log message details for debugging
+                    logger.info(f"📧 Checking message - Subject: {subject}")
+                    logger.info(f"📄 Body preview: {body[:200] if body else '(empty)'}...")
+                    
+                    # CRITICAL FIX: Check SUBJECT line first (Expedia puts OTP in subject!)
+                    # Subject format: "Your secure code is 170918 - never share this"
+                    matches = re.findall(r'\d{6}', subject)
+                    if matches:
+                        otp_code = matches[0]
+                        logger.info(f"🔑 Found OTP code in SUBJECT: {otp_code}")
+                        break
+                    
+                    # Try multiple regex patterns for OTP codes in body
+                    # Pattern 1: 6 consecutive digits (most common)
+                    matches = re.findall(r'\d{6}', body)
+                    if matches:
+                        otp_code = matches[0]
+                        logger.info(f"🔑 Found OTP code in body (pattern 1): {otp_code}")
+                        break
+                    
+                    # Pattern 2: "code is XXXXXX" or "code: XXXXXX"
+                    matches = re.findall(r'(?:code|verification|passcode)[:\s]+(\d{6})', body, re.IGNORECASE)
+                    if matches:
+                        otp_code = matches[0]
+                        logger.info(f"🔑 Found OTP code in body (pattern 2): {otp_code}")
+                        break
+                    
+                    # Pattern 3: Check in HTML if body is empty
+                    html = msg.get('html', '')
+                    if html:
+                        matches = re.findall(r'\d{6}', html)
+                        if matches:
+                            otp_code = matches[0]
+                            logger.info(f"🔑 Found OTP code in HTML (pattern 3): {otp_code}")
+                            break
+            
+            if otp_code:
+                # Automatically enter the OTP
+                logger.info(f"⌨️  Entering OTP code {otp_code} into input field...")
+                await page.fill('#verify-sms-one-time-passcode-input', otp_code)
+                await asyncio.sleep(0.5)
+                
+                logger.info("👆 Clicking Continue button...")
+                await page.click('#verifyOtpFormSubmitButton')
+                await asyncio.sleep(2)
+                
+                return f"✅ Successfully signed in! OTP {otp_code} was automatically entered and submitted."
+            else:
+                # Return detailed message with message previews for debugging
+                msg_summary = []
+                for i, msg in enumerate(messages[:3]):  # Show first 3 messages
+                    subject = msg.get('subject', 'no subject')
+                    body_preview = msg.get('body', '')[:100] if msg.get('body') else '(empty)'
+                    msg_summary.append(f"Message {i+1}: From={msg.get('from', 'unknown')}\n  Subject: {subject}\n  Body: {body_preview}")
+                
+                logger.error(f"❌ No OTP found in {len(messages)} messages!")
+                for summary in msg_summary:
+                    logger.error(f"  {summary}")
+                
+                return f"⚠️ OTP page reached but no 6-digit OTP code found in {len(messages)} inbox messages.\n\nMessages received:\n" + "\n".join(msg_summary)
+                
+        except Exception as e:
+            logger.error(f"Failed to fetch/enter OTP: {e}")
+            return f"⚠️ Could not auto-enter OTP: {str(e)}\nPlease enter OTP manually from your inbox."
         
     except Exception as e:
         logger.error(f"Sign-in error: {e}")

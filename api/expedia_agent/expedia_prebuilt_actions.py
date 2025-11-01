@@ -7,7 +7,7 @@ Designed for browser-use Agent integration
 from browser_use.controller.registry.service import Registry
 from browser_use.browser.browser import BrowserSession
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import os
 import logging
 import asyncio
@@ -16,6 +16,56 @@ logger = logging.getLogger(__name__)
 
 # Initialize prebuilt actions registry
 expedia_prebuilt = Registry()
+
+# ============================================================================
+# EMAIL INBOX ACTIONS
+# ============================================================================
+
+@expedia_prebuilt.action('Read emails from Expedia agent inbox')
+async def read_expedia_inbox(
+    browser_session: BrowserSession,
+    limit: int = 10
+) -> str:
+    """
+    Read recent emails from the Expedia agent's dedicated inbox.
+    Useful for checking booking confirmations, travel updates, or customer communications.
+    
+    Args:
+        limit: Maximum number of messages to return (default: 10, max: 50)
+    
+    Returns:
+        Formatted string with email messages including sender, subject, and preview
+    """
+    try:
+        from api.agentmail_helper import get_or_create_inbox, get_inbox_messages
+        
+        # Get or create the Expedia agent's inbox
+        inbox_id = get_or_create_inbox()
+        logger.info(f"Reading emails from Expedia inbox: {inbox_id}")
+        
+        # Fetch messages using the helper function
+        messages = get_inbox_messages(inbox_id, min(limit, 50))
+        
+        if not messages:
+            return "No messages found in Expedia agent inbox."
+        
+        # Format messages for agent consumption
+        result = f"Found {len(messages)} message(s) in Expedia inbox:\n\n"
+        for i, msg in enumerate(messages, 1):
+            result += f"📧 Email {i}:\n"
+            result += f"   From: {msg['from']}\n"
+            result += f"   Subject: {msg['subject']}\n"
+            result += f"   Preview: {msg['preview']}\n"
+            result += f"   Received: {msg['received_at']}\n"
+            result += f"   Message ID: {msg['message_id']}\n\n"
+        
+        logger.info(f"Successfully retrieved {len(messages)} messages from Expedia inbox")
+        return result
+        
+    except Exception as e:
+        error_msg = f"Failed to read Expedia inbox: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
 
 # ============================================================================
 # AUTHENTICATION ACTIONS
