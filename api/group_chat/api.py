@@ -123,23 +123,34 @@ async def start_group_chat(
         if final_state.get("current_plan") and "error" not in final_state["current_plan"]:
             from api.agentmail_helper import send_plan_email
             from api.group_chat.database import store_message_mapping
+            from api.cfg import settings
             
             plan = final_state["current_plan"]
             message_ids = {}
             
             # Send plan to all participants via email
             print(f"📧 Sending plan emails to {len(user_profiles)} participants...")
+            base_url = settings.webhook_base_url or "http://localhost:8000"
+            
             for user in user_profiles:
-                msg_id = send_plan_email(
+                # Generate a unique message ID for tracking
+                import uuid
+                msg_id = f"msg_{uuid.uuid4().hex[:16]}"
+                
+                # Send email with approval/reject links
+                returned_msg_id = send_plan_email(
                     to=user.email,
                     plan=plan,
                     session_id=session_id,
-                    user_id=user.user_id
+                    user_id=user.user_id,
+                    message_id=msg_id,
+                    base_url=base_url
                 )
-                message_ids[user.user_id] = msg_id
+                # Use the returned message ID from AgentMail
+                message_ids[user.user_id] = returned_msg_id
                 
-                # Store mapping for webhook lookup
-                store_message_mapping(msg_id, session_id, user.user_id)
+                # Store mapping for webhook lookup (with db session)
+                store_message_mapping(db, msg_id, session_id, user.user_id)
             
             # Update database with pending approval status
             update_chat_session(

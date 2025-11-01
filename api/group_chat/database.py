@@ -16,7 +16,10 @@ from .models import (
     UserPreferences,
     UserMemory,
     TravelPlan,
-    GroupChatSessionResponse
+    GroupChatSessionResponse,
+    ExpediaCredentials,
+    PaymentDetails,
+    ContactInfo
 )
 
 # Create declarative base
@@ -46,11 +49,32 @@ class UserDB(Base):
     
     def to_pydantic(self) -> UserProfile:
         """Convert to Pydantic UserProfile model"""
+        # Extract nested objects from preferences
+        prefs_dict = self.preferences.copy() if self.preferences else {}
+        
+        # Extract and parse expedia_credentials
+        expedia_creds_data = prefs_dict.pop("expedia_credentials", None)
+        expedia_creds = ExpediaCredentials(**expedia_creds_data) if expedia_creds_data else None
+        
+        # Extract and parse payment_details
+        payment_data = prefs_dict.pop("payment_details", None)
+        payment_details = PaymentDetails(**payment_data) if payment_data else None
+        
+        # Extract and parse contact_info
+        contact_data = prefs_dict.pop("contact_info", None)
+        contact_info = ContactInfo(**contact_data) if contact_data else None
+        
+        # Parse remaining preferences
+        user_prefs = UserPreferences(**prefs_dict) if prefs_dict else UserPreferences()
+        
         return UserProfile(
             user_id=self.user_id,
             user_name=self.user_name,
             email=self.email,
-            preferences=UserPreferences(**self.preferences),
+            preferences=user_prefs,
+            expedia_credentials=expedia_creds,
+            payment_details=payment_details,
+            contact_info=contact_info,
             memories=[m.to_pydantic() for m in self.memories]
         )
 
@@ -107,6 +131,16 @@ class GroupChatSessionDB(Base):
             participants=self.user_ids,
             current_plan=TravelPlan(**self.final_plan) if self.final_plan else None
         )
+
+
+class MessageMappingDB(Base):
+    """Database model for AgentMail message ID mappings"""
+    __tablename__ = "message_mappings"
+    
+    message_id = Column(String, primary_key=True, index=True)
+    session_id = Column(String, ForeignKey("group_chat_sessions.session_id"), nullable=False, index=True)
+    user_id = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
 
 
 # ============================================================================
@@ -418,21 +452,24 @@ def update_approval_state(
     }
 
 
-# Mapping storage for message_id → (session_id, user_id)
-# In production, this should be stored in Redis or the database
-_message_mappings: Dict[str, tuple[str, str]] = {}
-
-
-def store_message_mapping(message_id: str, session_id: str, user_id: str):
+def store_message_mapping(session: Session, message_id: str, session_id: str, user_id: str):
     """
-    Store mapping from AgentMail message_id to session and user.
+    Store mapping from AgentMail message_id to session and user in database.
     
     Args:
+        session: Database session
         message_id: AgentMail message ID
         session_id: Group chat session ID
         user_id: User ID who received the message
     """
-    _message_mappings[message_id] = (session_id, user_id)
+    mapping = MessageMappingDB(
+        message_id=message_id,
+        session_id=session_id,
+        user_id=user_id
+    )
+    session.add(mapping)
+    session.commit()
+    session.refresh(mapping)
 
 
 def get_session_by_message_id(
@@ -440,7 +477,7 @@ def get_session_by_message_id(
     message_id: str
 ) -> Optional[tuple[GroupChatSessionDB, str]]:
     """
-    Get chat session and user_id by AgentMail message_id.
+    Get chat session and user_id by AgentMail message_id from database.
     
     Args:
         session: Database session
@@ -449,16 +486,19 @@ def get_session_by_message_id(
     Returns:
         Tuple of (GroupChatSessionDB, user_id) or None if not found
     """
-    if message_id not in _message_mappings:
+    mapping = session.query(MessageMappingDB).filter(
+        MessageMappingDB.message_id == message_id
+    ).first()
+    
+    if not mapping:
         return None
     
-    session_id, user_id = _message_mappings[message_id]
-    chat_session = get_chat_session(session, session_id)
+    chat_session = get_chat_session(session, mapping.session_id)
     
     if not chat_session:
         return None
     
-    return (chat_session, user_id)
+    return (chat_session, mapping.user_id)
 
 
 # Initialize database on module import

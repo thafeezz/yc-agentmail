@@ -8,5 +8,6 @@ Complete API implementation including:
 """
 
 from .agent_service import app
+from . import agentmail_helper
 
-__all__ = ["app"]
+__all__ = ["app", "agentmail_helper"]

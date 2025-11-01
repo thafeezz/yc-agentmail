@@ -45,7 +45,7 @@ app = FastAPI(
 
 # Import and include Group Chat Agent router
 try:
-    from .group_chat_agent.api import router as group_chat_router
+    from .group_chat.api import router as group_chat_router
     app.include_router(group_chat_router)
     print("✅ Group Chat Agent endpoints loaded")
 except ImportError as e:

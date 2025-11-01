@@ -1,0 +1,137 @@
+
+================================================================================
+API ROUTE TEST: EXPEDIA BOOKING WITH BROWSER AUTOMATION
+================================================================================
+
+This test will:
+1. Create test users with Expedia credentials
+2. Create an approved travel plan in the database
+3. Call the API route that triggers parallel bookings
+4. Verify that browser automation actually runs
+
+⚠️  Requirements:
+   - BROWSER_USE_API_KEY in .env
+   - OPENAI_API_KEY in .env
+   - AGENTMAIL_API_KEY in .env
+   - Test credentials: testuser@agentmail.to / TestPass123!
+
+⏱️  Expected duration: 5-15 minutes if browser automation works
+================================================================================
+
+🚀 Starting test automatically in 3 seconds...
+   (Press Ctrl+C to cancel)
+
+================================================================================
+TEST: API Route for Expedia Booking with Browser Automation
+================================================================================
+INFO     [browser_use.telemetry.service] Anonymized telemetry enabled. See https://docs.browser-use.com/development/telemetry for more information.
+✅ Combined 32 Expedia tools from all registries
+✅ Custom Expedia tools loaded
+✅ Group Chat Agent endpoints loaded
+
+📦 Setting up test database...
+   ✅ Cleaned up existing test data
+
+👥 Creating test users with booking credentials...
+   ✅ Created test users: api_test_alice, api_test_bob
+
+✈️  Creating approved travel plan...
+   ✅ Created approved session: api_test_20251101_133843
+      Location: Cancun, Mexico
+      Dates: 2025-12-31 → 2026-01-07
+      Users: api_test_alice, api_test_bob
+
+🚀 Testing API route: POST /trigger-bookings/{session_id}
+   ⚠️  This will trigger REAL browser automation via ExpediaAgent
+   ⚠️  Expected duration: 5-15 minutes for parallel bookings
+   ⚠️  Watch at: https://cloud.browser-use.com/dashboard
+
+⏳ Calling trigger_parallel_bookings()...
+   This should initialize ExpediaAgent and start browser automation...
+🚀 Starting parallel bookings for 2 users...
+
+🔍 Booking for user api_test_alice (alice@agentmail.to)...
+   Has expedia_credentials: True
+   Has payment_details: True
+   Has contact_info: True
+✅ api_test_alice: All credentials present, setting up AgentMail inbox...
+📧 api_test_alice: AgentMail inbox created: fancystrategy553@agentmail.to
+✈️  api_test_alice: Initializing Flight Agent...
+🤖 Using AI model: gpt-4o (OpenAI)
+☁️  Browser mode: CLOUD (handles CAPTCHAs, saved logins)
+ℹ️  No profile ID - will use fresh cloud browser
+   To save auth: https://cloud.browser-use.com/dashboard/settings?tab=profiles
+🔧 Custom Expedia tools loaded (FLIGHT):
+   - 14 total tools
+🏨 api_test_alice: Initializing Hotel Agent...
+🤖 Using AI model: gpt-4o (OpenAI)
+☁️  Browser mode: CLOUD (handles CAPTCHAs, saved logins)
+ℹ️  No profile ID - will use fresh cloud browser
+   To save auth: https://cloud.browser-use.com/dashboard/settings?tab=profiles
+🔧 Custom Expedia tools loaded (HOTEL):
+   - 10 total tools
+🤖 api_test_alice: Agents initialized, starting booking tasks...
+✈️  api_test_alice: Starting flight booking...
+
+======================================================================
+🎯 TASK: 
+⚠️ ⚠️ ⚠️ CRITICAL OTP INSTRUCTION ⚠️ ⚠️ ⚠️
+After calling sign_in_expedia(), you will receive an OTP...
+======================================================================
+
+☁️  Cloud browser initialized
+INFO     [browser_use.agent.service] 💾 File system path: /var/folders/vt/qy6st08s5r78t707j1t3pz140000gn/T/browser_use_agent_069066fd-37e5-7492-8000-f0fccba8d3a6
+INFO     [browser_use.Agent🅰 d3a6 on 🆂 d3a6 🅟 20] 🧠 Starting a browser-use agent 0.5.7 with base_model=gpt-4o +vision extraction_model=gpt-4o +file_system
+🤖 Agent created
+   ✅ Custom Expedia tools enabled (14 tools)
+INFO     [browser_use.Agent🅰 d3a6 on 🆂 13c6 🅟 20] 🚀 Starting task: 
+⚠️ ⚠️ ⚠️ CRITICAL OTP INSTRUCTION ⚠️ ⚠️ ⚠️
+After calling sign_in_expedia(), you will receive an OTP code in the response.
+You MUST use GENERIC BROWSER ACTIONS (input_text, click) to enter this OTP - NOT custom Expedia tools!
+The custom Expedia tools DO NOT work on the OTP page. You must use basic browser input/click.
+
+CRITICAL: YOU MUST USE THE CUSTOM EXPEDIA TOOLS PROVIDED (except for OTP entry).
+
+YOUR AVAILABLE CUSTOM TOOLS:
+1. sign_in_expedia(email="fancystrategy553@agentmail.to") - Signs in and waits for OTP
+2. navigate_to_search_results(origin="LAX", destination="CUN", departure_date="2025-12-31", return_date="2026-01-07") - Goes directly to flight search results
+3. sort_by_price() - Sorts flights by price
+4. select_outbound_basic_fare() - Selects cheapest outbound flight
+5. select_return_basic_fare() - Selects cheapest return flight
+6. fill_traveler_details(first_name="Alice", last_name="Test", email="fancystrategy553@agentmail.to", phone="+1-555-111-2222") - Fills traveler info
+7. click_continue_checkout() - Continues to payment
+8. fill_payment_form(card_number="4111111111111111", cardholder_name="Alice Test", expiration_month="12", expiration_year="2025", cvv="123", billing_address=...) - Fills payment
+9. agentmail_read_inbox(inbox_id="fancystrategy553@agentmail.to") - Reads OTP from email
+
+EXACT WORKFLOW (follow this order):
+Step 1: Call sign_in_expedia(email="fancystrategy553@agentmail.to")
+        This tool will:
+        - Navigate to Expedia and enter the email
+        - Wait 10 seconds for email delivery
+        - Automatically fetch ALL inbox messages (including spam/junk)
+        - Return the messages with the OTP code included
+        
+Step 2: Read the OTP from the messages returned by sign_in_expedia
+        - Look for the Expedia verification code (usually 6 digits like "123456")
+        - The OTP will be clearly shown in the message bodies
+        
+Step 3: ⚠️⚠️⚠️ MANDATORY - Enter OTP manually with GENERIC browser actions ⚠️⚠️⚠️
+        - Extract the 6-digit OTP code from the sign_in_expedia response (e.g., "984575")
+        - Use GENERIC input_text() to fill "#verify-sms-one-time-passcode-input" with the OTP
+        - Use GENERIC click() on the Continue button
+        - DO NOT CALL: navigate_to_search_results, click_continue_checkout, fill_traveler_details, or ANY other Expedia tool yet!
+        - You are still on the OTP page - you must complete OTP entry first before ANY other tools work!
+        
+Step 4: After successful login, call navigate_to_search_results(origin="LAX", destination="CUN", departure_date="2025-12-31", return_date="2026-01-07")
+
+Step 5: Call sort_by_price()
+Step 6: Call select_outbound_basic_fare()
+Step 7: Call select_return_basic_fare()
+Step 8: Call fill_traveler_details(first_name="Alice", last_name="Test", email="fancystrategy553@agentmail.to", phone="+1-555-111-2222")
+Step 9: Call click_continue_checkout()
+Step 10: Call fill_payment_form(...) with payment details
+Step 11: Complete the booking
+
+IMPORTANT: sign_in_expedia automatically fetches inbox messages after 10 seconds!
+You do NOT need to call agentmail_read_inbox separately - the messages will be in the tool's response.
+

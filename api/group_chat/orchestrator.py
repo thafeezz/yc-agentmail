@@ -13,7 +13,13 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
 
-from tools import agentmail_create_inbox, agentmail_send_message, agentmail_read_inbox, hyperspell
+from ..tools import (
+    agentmail_create_inbox, 
+    agentmail_send_message, 
+    agentmail_read_inbox, 
+    hyperspell,
+    get_group_chat_tools
+)
 
 
 # Import both LLM providers
@@ -68,7 +74,7 @@ class GroupChatOrchestrator:
         self,
         users: List[UserProfile],
         messages_per_volley: int = 10,
-        llm_model: str = "claude-sonnet-4"
+        llm_model: str = "gpt-4o"
     ):
         """
         Initialize the orchestrator with user agents.
@@ -83,7 +89,15 @@ class GroupChatOrchestrator:
         self.messages_per_volley = messages_per_volley
         self.llm_model = llm_model
         
-        self.tools = [agentmail_create_inbox, agentmail_send_message, agentmail_read_inbox, hyperspell]
+        # Base tools available to all agents
+        self.base_tools = [agentmail_create_inbox, agentmail_send_message, agentmail_read_inbox, hyperspell]
+        
+        # Create user-specific tools for each participant
+        self.user_tools = {}
+        for user in users:
+            user_specific_tools = get_group_chat_tools(user.user_id, user.user_name)
+            self.user_tools[user.user_id] = user_specific_tools
+            print(f"🔧 Created {len(user_specific_tools)} tools for {user.user_name}")
 
         # Determine which LLM provider to use
         llm_provider = get_llm_provider()
@@ -251,15 +265,73 @@ Keep your message concise (2-4 sentences). Be collaborative but ensure your user
             if state.get("rejection_feedback"):
                 system_prompt += f"\n\nIMPORTANT: The previous plan was rejected with this feedback:\n{state['rejection_feedback']}\n\nAddress these concerns in your response."
             
-            user_prompt = "Generate your message for the group chat."
+            # Add tool usage instructions
+            system_prompt += f"""
+
+AVAILABLE TOOLS:
+You have access to tools for:
+1. Searching {user.user_name}'s personal travel memories and preferences (use this to recall their specific needs)
+2. Searching for up-to-date travel information (destinations, hotels, activities, travel tips)
+
+Use these tools when:
+- You need to recall specific details about {user.user_name}'s past experiences or preferences
+- You want to research travel options, destinations, or current travel information
+- You need to validate or enhance travel suggestions with real-world data
+
+Don't overuse tools - only use them when the information would genuinely help make better decisions."""
             
-            # Generate response
-            response = self.llm.invoke([
+            user_prompt = "Generate your message for the group chat. Use available tools if needed to provide better insights."
+            
+            # Get user-specific tools
+            user_tools = self.user_tools.get(user.user_id, [])
+            
+            # Bind tools to LLM if available
+            if user_tools:
+                llm_with_tools = self.llm.bind_tools(user_tools)
+            else:
+                llm_with_tools = self.llm
+            
+            # Generate response (may include tool calls)
+            response = llm_with_tools.invoke([
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
             ])
             
-            message_content = response.content
+            # Handle tool calls if present
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                print(f"🔧 {user.user_name}'s agent is using tools...")
+                tool_results = []
+                
+                for tool_call in response.tool_calls:
+                    tool_name = tool_call.get('name', 'unknown')
+                    tool_args = tool_call.get('args', {})
+                    print(f"   - Calling: {tool_name}")
+                    
+                    # Find and execute the tool
+                    for tool in user_tools:
+                        if tool.name == tool_name:
+                            try:
+                                result = tool.invoke(tool_args)
+                                tool_results.append(f"[Tool: {tool_name}] {result}")
+                            except Exception as e:
+                                tool_results.append(f"[Tool Error: {tool_name}] {str(e)}")
+                            break
+                
+                # If tools were used, add their results to context and regenerate
+                if tool_results:
+                    tool_context = "\n\n".join(tool_results)
+                    augmented_prompt = f"{user_prompt}\n\nTool Results:\n{tool_context}\n\nNow generate your group chat message incorporating these insights."
+                    
+                    # Regenerate message with tool results
+                    final_response = self.llm.invoke([
+                        SystemMessage(content=system_prompt),
+                        HumanMessage(content=augmented_prompt)
+                    ])
+                    message_content = final_response.content
+                else:
+                    message_content = response.content
+            else:
+                message_content = response.content
             
             # Create message with agent name
             agent_message = AIMessage(
