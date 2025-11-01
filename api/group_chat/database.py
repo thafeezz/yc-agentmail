@@ -89,9 +89,11 @@ class GroupChatSessionDB(Base):
     user_ids = Column(JSON, nullable=False)  # List of participating user IDs
     chat_history = Column(JSON, nullable=False)  # Serialized messages
     final_plan = Column(JSON, nullable=True)  # TravelPlan as JSON
-    status = Column(String, nullable=False, default="active")  # active, completed, rejected
+    status = Column(String, nullable=False, default="active")  # active, completed, rejected, pending_approval
     current_volley = Column(Integer, default=0)
     messages_per_agent = Column(Integer, default=10)
+    approval_state = Column(JSON, nullable=True)  # Track user approvals/rejections
+    agentmail_message_ids = Column(JSON, nullable=True)  # Map user_id -> message_id
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     
@@ -294,7 +296,9 @@ def update_chat_session(
     chat_history: Optional[List[Dict]] = None,
     final_plan: Optional[Dict] = None,
     status: Optional[str] = None,
-    current_volley: Optional[int] = None
+    current_volley: Optional[int] = None,
+    approval_state: Optional[Dict] = None,
+    agentmail_message_ids: Optional[Dict] = None
 ) -> Optional[GroupChatSessionDB]:
     """Update a group chat session"""
     chat_session = get_chat_session(session, session_id)
@@ -307,6 +311,10 @@ def update_chat_session(
             chat_session.status = status
         if current_volley is not None:
             chat_session.current_volley = current_volley
+        if approval_state is not None:
+            chat_session.approval_state = approval_state
+        if agentmail_message_ids is not None:
+            chat_session.agentmail_message_ids = agentmail_message_ids
         chat_session.updated_at = datetime.now()
         session.commit()
         session.refresh(chat_session)
@@ -350,6 +358,107 @@ def load_user_profiles(session: Session, user_ids: List[str]) -> List[UserProfil
         if profile:
             profiles.append(profile)
     return profiles
+
+
+# ============================================================================
+# AgentMail Integration Helpers
+# ============================================================================
+
+def update_approval_state(
+    session: Session,
+    session_id: str,
+    user_id: str,
+    approved: bool,
+    feedback: Optional[str] = None
+) -> Dict[str, bool]:
+    """
+    Update approval state for a user.
+    Returns dict with 'all_approved' and 'any_rejected' flags.
+    
+    Args:
+        session: Database session
+        session_id: Group chat session ID
+        user_id: User ID who is approving/rejecting
+        approved: True if approved, False if rejected
+        feedback: Optional feedback for rejection
+    
+    Returns:
+        Dict with 'all_approved' and 'any_rejected' boolean flags
+    """
+    chat_session = get_chat_session(session, session_id)
+    if not chat_session:
+        return {"all_approved": False, "any_rejected": False}
+    
+    approval_state = chat_session.approval_state or {}
+    approval_state[user_id] = {
+        "approved": approved,
+        "feedback": feedback,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    chat_session.approval_state = approval_state
+    session.commit()
+    
+    # Check if all users have approved
+    all_approved = all(
+        approval_state.get(uid, {}).get("approved", False)
+        for uid in chat_session.user_ids
+    )
+    
+    # Check if any user rejected with feedback
+    any_rejected = any(
+        approval_state.get(uid, {}).get("approved") == False
+        and approval_state.get(uid, {}).get("feedback")
+        for uid in chat_session.user_ids
+    )
+    
+    return {
+        "all_approved": all_approved,
+        "any_rejected": any_rejected
+    }
+
+
+# Mapping storage for message_id → (session_id, user_id)
+# In production, this should be stored in Redis or the database
+_message_mappings: Dict[str, tuple[str, str]] = {}
+
+
+def store_message_mapping(message_id: str, session_id: str, user_id: str):
+    """
+    Store mapping from AgentMail message_id to session and user.
+    
+    Args:
+        message_id: AgentMail message ID
+        session_id: Group chat session ID
+        user_id: User ID who received the message
+    """
+    _message_mappings[message_id] = (session_id, user_id)
+
+
+def get_session_by_message_id(
+    session: Session,
+    message_id: str
+) -> Optional[tuple[GroupChatSessionDB, str]]:
+    """
+    Get chat session and user_id by AgentMail message_id.
+    
+    Args:
+        session: Database session
+        message_id: AgentMail message ID
+    
+    Returns:
+        Tuple of (GroupChatSessionDB, user_id) or None if not found
+    """
+    if message_id not in _message_mappings:
+        return None
+    
+    session_id, user_id = _message_mappings[message_id]
+    chat_session = get_chat_session(session, session_id)
+    
+    if not chat_session:
+        return None
+    
+    return (chat_session, user_id)
 
 
 # Initialize database on module import

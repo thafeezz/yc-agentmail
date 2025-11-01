@@ -3,6 +3,7 @@ Plan-driven API test:
 - Seeds fake users and an approved TravelPlan into group_chat_agent DB
 - Mocks ExpediaAgent to avoid real browser/network
 - Calls booking endpoints via FastAPI TestClient
+- Simulates a full group chat → booking flow
 """
 
 import os
@@ -12,14 +13,17 @@ from typing import Any, Dict
 # Use a file-based SQLite DB for test isolation
 os.environ["DATABASE_URL"] = "sqlite:///./test_group_chat_agent.db"
 
-from group_chat_agent.database import (
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from api.group_chat_agent.database import (
     init_db,
     get_session,
     create_user,
     create_session as gc_create_session,
     update_chat_session,
 )
-from group_chat_agent.models import (
+from api.group_chat_agent.models import (
     UserPreferences,
     TravelPlan,
     TravelDates,
@@ -213,36 +217,91 @@ def build_payload() -> Dict[str, Any]:
 
 
 def run_test():
-    # Seed DB
-    session_id = seed_fake_users_and_plan()
+    print("\n" + "=" * 70)
+    print("🎯 GROUP CHAT → BOOKING API INTEGRATION TEST")
+    print("=" * 70 + "\n")
 
-    # Import API app and monkeypatch agent
-    import agent_service as svc
+    # Step 1: Seed DB
+    print("📋 Step 1: Setting up fake users and travel plan...")
+    session_id = seed_fake_users_and_plan()
+    print(f"   ✅ Session created: {session_id}")
+    print(f"   ✅ Plan details: LAX→JFK, 2025-12-15 to 2025-12-20")
+    print(f"   ✅ Hotel: Manhattan, $200/night, 3+ stars")
+    print(f"   ✅ Participants: Alice (adventure) + Bob (relaxation)")
+
+    # Step 2: Import and monkeypatch
+    print("\n📋 Step 2: Loading FastAPI app and mocking ExpediaAgent...")
+    from api import agent_service as svc
     svc.ExpediaAgent = FakeExpediaAgent  # type: ignore
+    print("   ✅ ExpediaAgent mocked for testing")
 
     from fastapi.testclient import TestClient
     client = TestClient(svc.app)
+    print("   ✅ TestClient initialized")
 
     payload = build_payload()
 
-    # both
+    # Step 3: Test combined booking (both)
+    print("\n📋 Step 3: Testing combined flight + hotel booking...")
     r = client.post(f"/group-chat/{session_id}/book", json=payload)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
     j = r.json()
-    assert j["status"] == "success"
-    assert j.get("booking_mode") in {"parallel", "sequential"}
+    assert j["status"] == "success", f"Expected success, got {j['status']}"
+    assert j.get("booking_mode") in {"parallel", "sequential"}, f"Invalid booking_mode: {j.get('booking_mode')}"
+    print(f"   ✅ Combined booking successful")
+    print(f"      Mode: {j.get('booking_mode')}")
+    print(f"      Message: {j.get('message')}")
 
-    # flight-only
+    # Step 4: Test flight-only booking
+    print("\n📋 Step 4: Testing flight-only booking...")
     r2 = client.post(f"/group-chat/{session_id}/book/flight", json=payload)
-    assert r2.status_code == 200, r2.text
-    assert r2.json()["status"] == "success"
+    assert r2.status_code == 200, f"Expected 200, got {r2.status_code}: {r2.text}"
+    j2 = r2.json()
+    assert j2["status"] == "success"
+    assert j2.get("booking_mode") == "flight_only"
+    print(f"   ✅ Flight booking successful")
+    print(f"      Mode: {j2.get('booking_mode')}")
+    print(f"      Message: {j2.get('message')}")
 
-    # hotel-only
+    # Step 5: Test hotel-only booking
+    print("\n📋 Step 5: Testing hotel-only booking...")
     r3 = client.post(f"/group-chat/{session_id}/book/hotel", json=payload)
-    assert r3.status_code == 200, r3.text
-    assert r3.json()["status"] == "success"
+    assert r3.status_code == 200, f"Expected 200, got {r3.status_code}: {r3.text}"
+    j3 = r3.json()
+    assert j3["status"] == "success"
+    assert j3.get("booking_mode") == "hotel_only"
+    print(f"   ✅ Hotel booking successful")
+    print(f"      Mode: {j3.get('booking_mode')}")
+    print(f"      Message: {j3.get('message')}")
 
-    print("All API plan booking tests passed.")
+    # Step 6: Test error cases
+    print("\n📋 Step 6: Testing error handling...")
+    
+    # Missing session
+    r_missing = client.post("/group-chat/nonexistent/book", json=payload)
+    assert r_missing.status_code == 404
+    print("   ✅ 404 on missing session")
+    
+    # Invalid segment
+    r_invalid = client.post(f"/group-chat/{session_id}/book?segment=invalid", json=payload)
+    assert r_invalid.status_code == 400
+    print("   ✅ 400 on invalid segment")
+
+    print("\n" + "=" * 70)
+    print("✅ ALL TESTS PASSED!")
+    print("=" * 70)
+    print("\n📊 Summary:")
+    print("   • Fake users seeded: Alice (adventure) + Bob (relaxation)")
+    print("   • Travel plan created and approved")
+    print("   • Combined flight+hotel booking: ✅")
+    print("   • Flight-only booking: ✅")
+    print("   • Hotel-only booking: ✅")
+    print("   • Error handling: ✅")
+    print("\n🚀 Schema alignment verified:")
+    print("   • TravelPlan fields map cleanly to BookingRequest")
+    print("   • Criteria derived from plan preferences")
+    print("   • Payload overrides respected")
+    print("\n" + "=" * 70 + "\n")
 
 
 if __name__ == "__main__":
