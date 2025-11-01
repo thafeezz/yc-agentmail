@@ -118,25 +118,67 @@ async def start_group_chat(
             for msg in final_state.get("messages", [])
         ]
         
-        # Update database with chat history and plan
-        update_chat_session(
-            db,
-            session_id=session_id,
-            chat_history=serializable_messages,
-            final_plan=final_state.get("current_plan"),
-            current_volley=1,
-            status="completed" if final_state.get("is_complete") else "active"
-        )
-        
-        # Build response
-        return GroupChatSessionResponse(
-            session_id=session_id,
-            status="completed" if final_state.get("is_complete") else "active",
-            current_volley=1,
-            total_messages=len(final_state.get("messages", [])),
-            participants=request.user_ids,
-            current_plan=TravelPlan(**final_state["current_plan"]) if final_state.get("current_plan") and "error" not in final_state["current_plan"] else None
-        )
+        # Check if plan was generated successfully
+        if final_state.get("current_plan") and "error" not in final_state["current_plan"]:
+            from api.agentmail_helper import send_plan_email
+            from api.group_chat.database import store_message_mapping
+            
+            plan = final_state["current_plan"]
+            message_ids = {}
+            
+            # Send plan to all participants via email
+            print(f"📧 Sending plan emails to {len(user_profiles)} participants...")
+            for user in user_profiles:
+                msg_id = send_plan_email(
+                    to=user.email,
+                    plan=plan,
+                    session_id=session_id,
+                    user_id=user.user_id
+                )
+                message_ids[user.user_id] = msg_id
+                
+                # Store mapping for webhook lookup
+                store_message_mapping(msg_id, session_id, user.user_id)
+            
+            # Update database with pending approval status
+            update_chat_session(
+                db,
+                session_id=session_id,
+                chat_history=serializable_messages,
+                final_plan=plan,
+                current_volley=1,
+                status="pending_approval",
+                agentmail_message_ids=message_ids
+            )
+            
+            # Return response without plan (sent via email)
+            return GroupChatSessionResponse(
+                session_id=session_id,
+                status="pending_approval",
+                current_volley=1,
+                total_messages=len(final_state.get("messages", [])),
+                participants=request.user_ids,
+                current_plan=None  # Don't return in API, sent via email
+            )
+        else:
+            # Plan generation failed or validation failed
+            update_chat_session(
+                db,
+                session_id=session_id,
+                chat_history=serializable_messages,
+                final_plan=final_state.get("current_plan"),
+                current_volley=1,
+                status="error"
+            )
+            
+            return GroupChatSessionResponse(
+                session_id=session_id,
+                status="error",
+                current_volley=1,
+                total_messages=len(final_state.get("messages", [])),
+                participants=request.user_ids,
+                current_plan=None
+            )
         
     except HTTPException:
         raise

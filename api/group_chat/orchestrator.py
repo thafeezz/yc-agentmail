@@ -280,6 +280,36 @@ Keep your message concise (2-4 sentences). Be collaborative but ensure your user
         
         return agent_node
     
+    def _validate_plan(self, plan: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+        """
+        Validate that plan has all required fields before sending.
+        Plan cannot be submitted unless all required fields are present.
+        """
+        required_fields = {
+            "dates": ["departure_date", "return_date"],
+            "flight": ["origin", "destination"],
+            "hotel": ["location", "type"],
+            "budget": ["total_per_person"],
+            "location": None,  # Just check existence
+        }
+        
+        missing = []
+        
+        for field, subfields in required_fields.items():
+            if field not in plan:
+                missing.append(field)
+                continue
+            
+            if subfields:
+                for subfield in subfields:
+                    if subfield not in plan[field]:
+                        missing.append(f"{field}.{subfield}")
+        
+        if missing:
+            return False, f"Missing required fields: {', '.join(missing)}"
+        
+        return True, None
+    
     def _master_planner_node(self, state: GroupChatState) -> Dict[str, Any]:
         """
         Master planner node - synthesizes chat history into final TravelPlan.
@@ -372,13 +402,27 @@ Respond ONLY with the JSON, no other text."""
             
             plan_dict = json.loads(plan_text.strip())
             
+            # VALIDATE PLAN - must have all required fields
+            is_valid, error_msg = self._validate_plan(plan_dict)
+            
+            if not is_valid:
+                print(f"❌ Plan validation failed: {error_msg}")
+                return {
+                    "current_plan": {
+                        "error": "Plan validation failed",
+                        "details": error_msg,
+                        "status": "error"
+                    },
+                    "is_complete": False  # Don't complete, force retry
+                }
+            
             # Add metadata
             plan_dict["plan_id"] = f"plan_{uuid.uuid4().hex[:8]}"
             plan_dict["created_at"] = datetime.now().isoformat()
             plan_dict["status"] = "draft"
             plan_dict["participants"] = self.user_ids
             
-            print("✅ Final plan synthesized successfully!")
+            print("✅ Final plan synthesized and validated successfully!")
             print(f"   Location: {plan_dict.get('location', 'N/A')}")
             print(f"   Budget: ${plan_dict.get('budget', {}).get('total_per_person', 'N/A')} per person")
             

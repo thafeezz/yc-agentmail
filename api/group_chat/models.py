@@ -34,6 +34,27 @@ class GroupChatState(TypedDict):
 # User & Memory Models
 # ============================================================================
 
+class ExpediaCredentials(BaseModel):
+    """Expedia account credentials for booking"""
+    email: str = Field(..., description="Expedia account email")
+    password: str = Field(..., description="Expedia account password")
+
+
+class PaymentDetails(BaseModel):
+    """Payment information for bookings"""
+    card_number: str = Field(..., description="Credit card number")
+    cardholder_name: str = Field(..., description="Name on card")
+    expiration_month: str = Field(..., description="Card expiration month (01-12)")
+    expiration_year: str = Field(..., description="Card expiration year (YYYY)")
+    cvv: str = Field(..., description="Card CVV/security code")
+    billing_address: Dict[str, str] = Field(..., description="Billing address (street, city, state, zip, country)")
+
+
+class ContactInfo(BaseModel):
+    """Contact information"""
+    phone: str = Field(..., description="Contact phone number")
+
+
 class UserMemory(BaseModel):
     """Individual memory entry for a user"""
     memory_id: str = Field(..., description="Unique memory identifier")
@@ -118,6 +139,18 @@ class UserProfile(BaseModel):
     memories: List[UserMemory] = Field(
         default_factory=list,
         description="User's memory history"
+    )
+    expedia_credentials: Optional[ExpediaCredentials] = Field(
+        None,
+        description="Expedia account credentials (from onboarding)"
+    )
+    payment_details: Optional[PaymentDetails] = Field(
+        None,
+        description="Payment information (from onboarding)"
+    )
+    contact_info: Optional[ContactInfo] = Field(
+        None,
+        description="Contact information (from onboarding)"
     )
 
     class Config:

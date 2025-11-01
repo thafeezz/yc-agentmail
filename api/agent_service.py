@@ -15,13 +15,13 @@ from typing import Optional, Dict, Any, List
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field, validator
-from agent_browser import ExpediaAgent, initialize_observability
+from .expedia_agent import ExpediaAgent, initialize_observability
 from typing import Tuple
 
 # Group Chat imports for plan-driven booking
 try:
-    from group_chat_agent.models import TravelPlan
-    from group_chat_agent.database import (
+    from .group_chat_agent.models import TravelPlan
+    from .group_chat_agent.database import (
         get_session as gc_get_session,
         get_chat_session as gc_get_chat_session,
     )
@@ -45,7 +45,7 @@ app = FastAPI(
 
 # Import and include Group Chat Agent router
 try:
-    from group_chat_agent.api import router as group_chat_router
+    from .group_chat_agent.api import router as group_chat_router
     app.include_router(group_chat_router)
     print("✅ Group Chat Agent endpoints loaded")
 except ImportError as e:
